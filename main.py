@@ -9,38 +9,23 @@ from agents.mcp import MCPServer, MCPServerStdio
 async def run(mcp_server: MCPServer):
     agent = Agent(
         name="Assistant",
-        instructions="Use the tools to read the filesystem and answer questions based on those files.",
+        instructions="Use the tools to open browser and navigate web pages",
         mcp_servers=[mcp_server],
     )
 
     # List the files it can read
-    message = "Read the files and list them."
+    message = "Use your browser to navigate to bosch.com and count the number of all power tools catogories. Make sure that you also expand the ones that are collapsed."
     print(f"Running: {message}")
     result = await Runner.run(starting_agent=agent, input=message)
     print(result.final_output)
 
-    # Ask about books
-    message = "What is my #1 favorite book?"
-    print(f"\n\nRunning: {message}")
-    result = await Runner.run(starting_agent=agent, input=message)
-    print(result.final_output)
-
-    # Ask a question that reads then reasons.
-    message = "Look at my favorite songs. Suggest one new song that I might like."
-    print(f"\n\nRunning: {message}")
-    result = await Runner.run(starting_agent=agent, input=message)
-    print(result.final_output)
-
-
 async def main():
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    samples_dir = os.path.join(current_dir, "smp")
 
     async with MCPServerStdio(
         name="Filesystem Server, via npx",
         params={
             "command": "npx",
-            "args": ["-y", "@modelcontextprotocol/server-filesystem", samples_dir],
+            "args": ["-y", "@playwright/mcp@latest"],
         },
     ) as server:
         trace_id = gen_trace_id()
