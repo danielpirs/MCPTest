@@ -1,53 +1,57 @@
-from agents import Agent, InputGuardrail,GuardrailFunctionOutput, Runner
-from pydantic import BaseModel
 import asyncio
+import os
+import shutil
 
-class HomeworkOutput(BaseModel):
-    is_homework: bool
-    reasoning: str
-
-guardrail_agent = Agent(
-    name="Guardrail check",
-    instructions="Check if the user is asking about homework.",
-    output_type=HomeworkOutput,
-)
-
-math_tutor_agent = Agent(
-    name="Math Tutor",
-    handoff_description="Specialist agent for math questions",
-    instructions="You provide help with math problems. Explain your reasoning at each step and include examples",
-)
-
-history_tutor_agent = Agent(
-    name="History Tutor",
-    handoff_description="Specialist agent for historical questions",
-    instructions="You provide assistance with historical queries. Explain important events and context clearly.",
-)
+from agents import Agent, Runner, gen_trace_id, trace
+from agents.mcp import MCPServer, MCPServerStdio
 
 
-async def homework_guardrail(ctx, agent, input_data):
-    result = await Runner.run(guardrail_agent, input_data, context=ctx.context)
-    final_output = result.final_output_as(HomeworkOutput)
-    return GuardrailFunctionOutput(
-        output_info=final_output,
-        tripwire_triggered=not final_output.is_homework,
+async def run(mcp_server: MCPServer):
+    agent = Agent(
+        name="Assistant",
+        instructions="Use the tools to read the filesystem and answer questions based on those files.",
+        mcp_servers=[mcp_server],
     )
 
-triage_agent = Agent(
-    name="Triage Agent",
-    instructions="You determine which agent to use based on the user's homework question",
-    handoffs=[history_tutor_agent, math_tutor_agent],
-    input_guardrails=[
-        InputGuardrail(guardrail_function=homework_guardrail),
-    ],
-)
-
-async def main():
-    # result = await Runner.run(triage_agent, "who was the first president of the united states?")
-    # print(result.final_output)
-
-    result = await Runner.run(triage_agent, "what happened in 1900?")
+    # List the files it can read
+    message = "Read the files and list them."
+    print(f"Running: {message}")
+    result = await Runner.run(starting_agent=agent, input=message)
     print(result.final_output)
 
+    # Ask about books
+    message = "What is my #1 favorite book?"
+    print(f"\n\nRunning: {message}")
+    result = await Runner.run(starting_agent=agent, input=message)
+    print(result.final_output)
+
+    # Ask a question that reads then reasons.
+    message = "Look at my favorite songs. Suggest one new song that I might like."
+    print(f"\n\nRunning: {message}")
+    result = await Runner.run(starting_agent=agent, input=message)
+    print(result.final_output)
+
+
+async def main():
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    samples_dir = os.path.join(current_dir, "smp")
+
+    async with MCPServerStdio(
+        name="Filesystem Server, via npx",
+        params={
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-filesystem", samples_dir],
+        },
+    ) as server:
+        trace_id = gen_trace_id()
+        with trace(workflow_name="MCP Filesystem Example", trace_id=trace_id):
+            print(f"View trace: https://platform.openai.com/traces/trace?trace_id={trace_id}\n")
+            await run(server)
+
+
 if __name__ == "__main__":
+    # Let's make sure the user has npx installed
+    if not shutil.which("npx"):
+        raise RuntimeError("npx is not installed. Please install it with `npm install -g npx`.")
+
     asyncio.run(main())
